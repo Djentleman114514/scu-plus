@@ -1,16 +1,28 @@
 import { MAGAZINE_THEME_CSS } from "./theme";
+import { APPLE_THEME_CSS } from "./theme-apple";
 import {
+  APPLE_CANVAS,
   DARK_COLORS,
   LIGHT_COLORS,
   DEFAULT_ACCENT,
   isDarkModeEffective,
   mixWithWhite,
-  normalizeAccent,
   normalizeDarkMode,
-  type DarkModeSetting
+  normalizeTheme,
+  resolveAccent,
+  type DarkModeSetting,
+  type ThemeName
 } from "./palette";
 
-const THEME_STYLE_ID = "scu-plus-magazine-theme";
+/** 两套主题共用同一个 <style> id，切换主题时直接替换 */
+const THEME_STYLE_ID = "scu-plus-theme";
+/** 旧版本使用的 id —— 注入前顺手清理，避免重复叠加 */
+const LEGACY_STYLE_ID = "scu-plus-magazine-theme";
+
+const THEME_CSS: Record<ThemeName, string> = {
+  magazine: MAGAZINE_THEME_CSS,
+  apple: APPLE_THEME_CSS
+};
 
 /**
  * 将 #rrggbb 颜色转换为 rgba() 字符串
@@ -75,9 +87,30 @@ function keepStyleLast(style: HTMLStyleElement): void {
 /** 当前注入参数 —— 系统主题变化时按相同参数重算深浅色 */
 let currentAccent: string = DEFAULT_ACCENT;
 let currentMode: DarkModeSetting = "auto";
+let currentTheme: ThemeName = "magazine";
 
 let mediaQuery: MediaQueryList | null = null;
 let mediaListener: ((e: MediaQueryListEvent) => void) | null = null;
+
+/** 各主题的画布背景、深色点缀色调亮比例（文字 / 按钮填充）与柔和底色透明度 */
+function themeTuning(theme: ThemeName, dark: boolean) {
+  if (theme === "apple") {
+    return {
+      canvas: dark ? APPLE_CANVAS.dark : APPLE_CANVAS.light,
+      textMix: 0.22,
+      fillMix: 0.06,
+      softAlpha: dark ? 0.18 : 0.08,
+      lineAlpha: dark ? 0.4 : 0.28
+    };
+  }
+  return {
+    canvas: dark ? DARK_COLORS.paper : LIGHT_COLORS.paper,
+    textMix: 0.38,
+    fillMix: 0.15,
+    softAlpha: dark ? 0.16 : 0.06,
+    lineAlpha: dark ? 0.4 : 0.22
+  };
+}
 
 /**
  * 按当前模式计算深浅色并写入 <html>：
@@ -91,21 +124,20 @@ function applyThemeMode(): void {
   } else {
     root.removeAttribute("data-scu-theme");
   }
+  root.setAttribute("data-scu-style", currentTheme);
+
+  const tune = themeTuning(currentTheme, dark);
 
   // 画布背景兜底：页面内容不足一屏时，可视区剩余部分的背景取自 <html>。
   // 行内 !important + 具体色值（而非 var()），即使站点在 DOMContentLoaded
   // 之后注入的样式压过主题表、或主题表被移除导致变量未解析，也不会露出白底。
-  root.style.setProperty(
-    "background-color",
-    dark ? DARK_COLORS.paper : LIGHT_COLORS.paper,
-    "important"
-  );
+  root.style.setProperty("background-color", tune.canvas, "important");
 
-  const accentText = dark ? mixWithWhite(currentAccent, 0.38) : currentAccent;
-  const accentFill = dark ? mixWithWhite(currentAccent, 0.15) : currentAccent;
+  const accentText = dark ? mixWithWhite(currentAccent, tune.textMix) : currentAccent;
+  const accentFill = dark ? mixWithWhite(currentAccent, tune.fillMix) : currentAccent;
   root.style.setProperty("--scu-accent", accentText);
-  root.style.setProperty("--scu-accent-soft", hexToRgba(accentText, dark ? 0.16 : 0.06));
-  root.style.setProperty("--scu-accent-line", hexToRgba(accentText, dark ? 0.4 : 0.22));
+  root.style.setProperty("--scu-accent-soft", hexToRgba(accentText, tune.softAlpha));
+  root.style.setProperty("--scu-accent-line", hexToRgba(accentText, tune.lineAlpha));
   root.style.setProperty("--scu-accent-fill", accentFill);
   root.style.setProperty("--scu-c1", accentText);
 }
@@ -136,34 +168,36 @@ function unbindMediaListener(): void {
 }
 
 /**
- * 注入杂志风主题。
+ * 注入主题（杂志风 / Apple风）。
  *
  * - 全量 CSS 覆盖（!important），追加为文档中最后一个样式，
  *   后于站点自身样式表生效。
- * - 点缀色取自用户设置的 beautifyColor，写入 :root 的 --scu-accent 变量，
- *   并同步生成柔和底色 --scu-accent-soft、边框 --scu-accent-line、
- *   填充按钮底色 --scu-accent-fill 与课表色块 --scu-c1。
+ * - 点缀色取自用户设置的 beautifyColor（Apple风下默认值换成系统蓝，见 resolveAccent），
+ *   写入 :root 的 --scu-accent 变量，并同步生成柔和底色 --scu-accent-soft、
+ *   边框 --scu-accent-line、填充按钮底色 --scu-accent-fill 与课表色块 --scu-c1。
  * - 深色模式（darkMode = "dark"，或 "auto" 且系统为深色）：
  *   在 <html> 上设置 data-scu-theme="dark" 切换 CSS 变量覆盖块，
  *   并将点缀色调亮以保证暗底可读性；"auto" 时监听系统主题实时切换。
  * - 同时在 <html> 行内写入具体背景色（!important），保证内容不足
- *   一屏时画布底色仍为主题纸色，不随站点样式或变量缺失露出白底。
+ *   一屏时画布底色仍为主题底色，不随站点样式或变量缺失露出白底。
  * - 幂等：重复调用不会叠加多个 <style>。
  * - 可在 document_start 调用（<head> 尚未创建时挂到 documentElement 下，
  *   并由 orderGuard 保证解析过程中始终位于末尾）。
  */
-export function injectBeautify(accentColor?: string, darkMode?: string): void {
+export function injectBeautify(accentColor?: string, darkMode?: string, theme?: string): void {
   const host = document.head || document.documentElement;
   if (!host) return; // document_start 极早期根元素可能尚未创建，调用方负责重试
 
-  currentAccent = normalizeAccent(accentColor);
+  currentTheme = normalizeTheme(theme);
+  currentAccent = resolveAccent(currentTheme, accentColor);
   currentMode = normalizeDarkMode(darkMode);
 
   document.getElementById(THEME_STYLE_ID)?.remove();
+  document.getElementById(LEGACY_STYLE_ID)?.remove();
 
   const style = document.createElement("style");
   style.id = THEME_STYLE_ID;
-  style.textContent = MAGAZINE_THEME_CSS;
+  style.textContent = THEME_CSS[currentTheme];
   host.appendChild(style);
   keepStyleLast(style);
 
@@ -172,16 +206,18 @@ export function injectBeautify(accentColor?: string, darkMode?: string): void {
 }
 
 /**
- * 移除杂志风主题（幂等）。
+ * 移除主题（幂等）。
  */
 export function removeBeautify(): void {
   orderGuard?.disconnect();
   orderGuard = null;
   unbindMediaListener();
   document.getElementById(THEME_STYLE_ID)?.remove();
+  document.getElementById(LEGACY_STYLE_ID)?.remove();
 
   const root = document.documentElement;
   root.removeAttribute("data-scu-theme");
+  root.removeAttribute("data-scu-style");
   root.style.removeProperty("background-color");
   root.style.removeProperty("--scu-accent");
   root.style.removeProperty("--scu-accent-soft");
@@ -193,9 +229,14 @@ export function removeBeautify(): void {
 /**
  * 根据开关应用或移除主题（幂等）。
  */
-export function applyBeautify(enabled: boolean, accentColor?: string, darkMode?: string): void {
+export function applyBeautify(
+  enabled: boolean,
+  accentColor?: string,
+  darkMode?: string,
+  theme?: string
+): void {
   if (enabled) {
-    injectBeautify(accentColor, darkMode);
+    injectBeautify(accentColor, darkMode, theme);
   } else {
     removeBeautify();
   }

@@ -15,6 +15,31 @@ export function normalizeAccent(color: string | undefined | null): string {
   return color && /^#[0-9a-f]{6}$/i.test(color.trim()) ? color.trim() : DEFAULT_ACCENT
 }
 
+/** 主题风格："magazine" 杂志风 | "apple" 简洁毛玻璃风 */
+export type ThemeName = "magazine" | "apple"
+
+/** 校验主题名，非法值回退为杂志风（保持老用户外观不变） */
+export function normalizeTheme(value: string | undefined | null): ThemeName {
+  return value === "apple" ? "apple" : "magazine"
+}
+
+/** Apple风格默认点缀色（系统蓝） */
+export const APPLE_ACCENT = "#0071e3"
+
+/** Apple风格画布色（<html> 行内兜底背景用） */
+export const APPLE_CANVAS = { light: "#f5f5f7", dark: "#000000" }
+
+/**
+ * 解析实际生效的点缀色。
+ * 点缀色设置的默认值是杂志风的锦绣红；Apple风格下若用户没有改过它，
+ * 就使用系统蓝，否则尊重用户自定义颜色。
+ */
+export function resolveAccent(theme: ThemeName, color: string | undefined | null): string {
+  const accent = normalizeAccent(color)
+  if (theme === "apple" && accent.toLowerCase() === DEFAULT_ACCENT) return APPLE_ACCENT
+  return accent
+}
+
 /** 深色模式设置值："auto" 跟随系统 | "light" 浅色 | "dark" 深色 */
 export type DarkModeSetting = "auto" | "light" | "dark"
 

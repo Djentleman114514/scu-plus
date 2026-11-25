@@ -11,7 +11,7 @@ export const config: PlasmoCSConfig = {
 }
 
 /**
- * 杂志风主题的提前注入器（防闪屏）。
+ * 主题（杂志风 / Apple风）的提前注入器（防闪屏）。
  *
  * zhjw.ts 主内容脚本要等 window load 才运行，若由它注入主题，
  * 每次导航都会先以原版样式渲染、加载完成后才突然切换主题。
@@ -28,6 +28,8 @@ interface BeautifyMirror {
   color?: string
   /** 深色模式设置（"auto" | "light" | "dark"），旧镜像缺失时按 "auto" 处理 */
   dark?: string
+  /** 主题风格（"magazine" | "apple"），旧镜像缺失时按杂志风处理 */
+  theme?: string
 }
 
 function readMirror(): BeautifyMirror | null {
@@ -39,7 +41,8 @@ function readMirror(): BeautifyMirror | null {
     return {
       on: parsed.on,
       color: typeof parsed.color === "string" ? parsed.color : undefined,
-      dark: typeof parsed.dark === "string" ? parsed.dark : undefined
+      dark: typeof parsed.dark === "string" ? parsed.dark : undefined,
+      theme: typeof parsed.theme === "string" ? parsed.theme : undefined
     }
   } catch {
     return null
@@ -54,9 +57,9 @@ function writeMirror(mirror: BeautifyMirror): void {
   }
 }
 
-function applyAndMirror(on: boolean, color?: string, dark?: string): void {
-  applyBeautify(on, color, dark)
-  writeMirror({ on, color, dark })
+function applyAndMirror(on: boolean, color?: string, dark?: string, theme?: string): void {
+  applyBeautify(on, color, dark, theme)
+  writeMirror({ on, color, dark, theme })
 }
 
 function boot(): void {
@@ -65,7 +68,7 @@ function boot(): void {
 
   // 2) 异步校准真实设置（首次启用、跨标签页修改、镜像被清除等情况）
   getSetting()
-    .then((s) => applyAndMirror(s.beautifySwitch, s.beautifyColor, s.beautifyDarkMode))
+    .then((s) => applyAndMirror(s.beautifySwitch, s.beautifyColor, s.beautifyDarkMode, s.beautifyTheme))
     .catch((e) => console.warn("SCU+: 读取美化设置失败，保持镜像状态", e))
 
   // 3) 设置页保存后实时同步，无需等下次导航
@@ -73,7 +76,7 @@ function boot(): void {
     setting: (change) => {
       const next = change?.newValue as Partial<SettingItem> | undefined
       if (!next || typeof next.beautifySwitch !== "boolean") return
-      applyAndMirror(next.beautifySwitch, next.beautifyColor, next.beautifyDarkMode)
+      applyAndMirror(next.beautifySwitch, next.beautifyColor, next.beautifyDarkMode, next.beautifyTheme)
     }
   })
 }
@@ -85,7 +88,7 @@ function earlyInject(): boolean {
   if (!document.documentElement) return false
   const mirror = readMirror()
   if (!mirror?.on) return false
-  applyBeautify(true, mirror.color, mirror.dark)
+  applyBeautify(true, mirror.color, mirror.dark, mirror.theme)
   return true
 }
 

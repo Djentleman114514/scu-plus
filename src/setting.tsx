@@ -5,7 +5,7 @@ import { resolveAvatarRedirectUrl } from "~common/avatar";
 import { message, notification, confirm } from "~script/notice";
 import React from "react";
 import { Actions } from "~constants/actions";
-import { LIGHT_COLORS, DARK_COLORS, DEFAULT_ACCENT, mixWithWhite, normalizeAccent, normalizeDarkMode, type DarkModeSetting } from "~features/beautify/palette";
+import { LIGHT_COLORS, DARK_COLORS, DEFAULT_ACCENT, mixWithWhite, normalizeDarkMode, normalizeTheme, resolveAccent, type DarkModeSetting } from "~features/beautify/palette";
 import packagejson from "package.json"
 
 const SERIF = LIGHT_COLORS.serif
@@ -421,7 +421,7 @@ function DataSettingFragment({ isDirty, setIsDirty, setAccent, setDarkMode }: { 
       const savedSettings = await getSetting();
       setSetting(savedSettings);
       setLoading(false);
-      setAccent(normalizeAccent(savedSettings.beautifyColor));
+      setAccent(resolveAccent(normalizeTheme(savedSettings.beautifyTheme), savedSettings.beautifyColor));
       setDarkMode(normalizeDarkMode(savedSettings.beautifyDarkMode));
       initialSettingRef.current = savedSettings;
     };
@@ -447,8 +447,8 @@ function DataSettingFragment({ isDirty, setIsDirty, setAccent, setDarkMode }: { 
     // 直接基于当前 state 计算，避免依赖 setState updater 的立即执行（React 不保证）
     const newConfig = { ...setting, ...changedValues } as SettingItem;
     setSetting(newConfig);
-    if (changedValues.beautifyColor !== undefined) {
-      setAccent(normalizeAccent(changedValues.beautifyColor));
+    if (changedValues.beautifyColor !== undefined || changedValues.beautifyTheme !== undefined) {
+      setAccent(resolveAccent(normalizeTheme(newConfig.beautifyTheme), newConfig.beautifyColor));
     }
     if (changedValues.beautifyDarkMode !== undefined) {
       setDarkMode(normalizeDarkMode(changedValues.beautifyDarkMode));
@@ -461,11 +461,13 @@ function DataSettingFragment({ isDirty, setIsDirty, setAccent, setDarkMode }: { 
     if (initialSetting &&
       (changedValues.beautifySwitch !== undefined ||
         changedValues.beautifyColor !== undefined ||
+        changedValues.beautifyTheme !== undefined ||
         changedValues.beautifyDarkMode !== undefined)) {
       const persisted = {
         ...initialSetting,
         beautifySwitch: newConfig.beautifySwitch,
         beautifyColor: newConfig.beautifyColor,
+        beautifyTheme: newConfig.beautifyTheme,
         beautifyDarkMode: newConfig.beautifyDarkMode
       } as SettingItem;
       saveSetting(persisted);
@@ -493,7 +495,7 @@ function DataSettingFragment({ isDirty, setIsDirty, setAccent, setDarkMode }: { 
         const data = new SettingItem();
         saveSettingWithUpdates(data);
         setSetting(data);
-        setAccent(normalizeAccent(data.beautifyColor));
+        setAccent(resolveAccent(normalizeTheme(data.beautifyTheme), data.beautifyColor));
         setDarkMode(normalizeDarkMode(data.beautifyDarkMode));
         initialSettingRef.current = data;
         setIsDirty(false);
@@ -523,7 +525,7 @@ function DataSettingFragment({ isDirty, setIsDirty, setAccent, setDarkMode }: { 
                 const jsonData = sanitizeSettings({ ...setting, ...parsed });
                 saveSettingWithUpdates(jsonData);
                 setSetting(jsonData);
-                setAccent(normalizeAccent(jsonData.beautifyColor));
+                setAccent(resolveAccent(normalizeTheme(jsonData.beautifyTheme), jsonData.beautifyColor));
                 setDarkMode(normalizeDarkMode(jsonData.beautifyDarkMode));
                 initialSettingRef.current = jsonData;
                 setIsDirty(false);
@@ -542,15 +544,28 @@ function DataSettingFragment({ isDirty, setIsDirty, setAccent, setDarkMode }: { 
       <SectionTitle>界面美化</SectionTitle>
       <div className="scu-setting-card">
         <Field
-          label="美化开关（杂志风主题）"
-          tip="开启后将教务系统整体替换为现代杂志风主题：纸墨配色、衬线标题、三线表。外观类设置修改后立即生效，无需点击保存"
+          label="美化开关"
+          tip="开启后将教务系统整体替换为所选主题。外观类设置修改后立即生效，无需点击保存"
         >
           <ScuSwitch checked={setting.beautifySwitch} onChange={(v) => handleFormChange({ beautifySwitch: v })} />
         </Field>
         {setting.beautifySwitch && (<>
           <Field
+            label="主题风格"
+            tip="杂志风：纸墨配色、衬线标题、三线表。Apple风：简洁留白、圆角卡片、系统字体，仅在导航栏与弹出菜单等小面积悬浮层使用毛玻璃，不影响滚动性能"
+          >
+            <select
+              className="scu-select"
+              value={normalizeTheme(setting.beautifyTheme)}
+              onChange={(e) => handleFormChange({ beautifyTheme: e.target.value })}
+            >
+              <option value="magazine">杂志风</option>
+              <option value="apple">Apple风</option>
+            </select>
+          </Field>
+          <Field
             label="深色模式"
-            tip="杂志风主题的深色模式，修改后立即生效。「跟随系统」将在系统处于深色模式时自动切换，教务页面与插件界面同时生效"
+            tip="主题的深色模式，修改后立即生效。「跟随系统」将在系统处于深色模式时自动切换，教务页面与插件界面同时生效"
           >
             <select
               className="scu-select"
@@ -564,7 +579,7 @@ function DataSettingFragment({ isDirty, setIsDirty, setAccent, setDarkMode }: { 
           </Field>
           <Field
             label="主题点缀色"
-            tip="杂志风主题的点缀色，用于报头、栏目标记、链接等，默认锦绣红 #9e1b32"
+            tip="主题的点缀色，用于报头、栏目标记、链接、按钮等。杂志风默认锦绣红 #9e1b32；Apple风在未自定义时使用系统蓝 #0071e3"
           >
             <input
               className="scu-input"
@@ -579,10 +594,10 @@ function DataSettingFragment({ isDirty, setIsDirty, setAccent, setDarkMode }: { 
               <input
                 type="color"
                 className="scu-color"
-                value={normalizeAccent(setting.beautifyColor)}
+                value={resolveAccent(normalizeTheme(setting.beautifyTheme), setting.beautifyColor)}
                 onChange={(e) => handleFormChange({ beautifyColor: e.target.value })}
               />
-              <span className="hex">{normalizeAccent(setting.beautifyColor)}</span>
+              <span className="hex">{resolveAccent(normalizeTheme(setting.beautifyTheme), setting.beautifyColor)}</span>
             </div>
           </Field>
         </>)}

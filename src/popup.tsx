@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { checkVersion, UpdateCheckResult } from "~/script/utils"
 import { getSetting, saveSetting } from "~/script/config"
-import { DARK_COLORS, LIGHT_COLORS, DEFAULT_ACCENT, isDarkModeEffective, mixWithWhite, normalizeAccent, normalizeDarkMode, type DarkModeSetting } from "~features/beautify/palette"
+import { DARK_COLORS, LIGHT_COLORS, DEFAULT_ACCENT, isDarkModeEffective, mixWithWhite, normalizeAccent, normalizeDarkMode, normalizeTheme, resolveAccent, type DarkModeSetting, type ThemeName } from "~features/beautify/palette"
 import packagejson from "package.json"
 import "style.css"
 
@@ -16,13 +16,17 @@ const openLink = (link: string) => {
 }
 
 function IndexPopup() {
-  const [accent, setAccent] = useState(DEFAULT_ACCENT)
+  const [rawAccent, setRawAccent] = useState(DEFAULT_ACCENT)
+  const [theme, setTheme] = useState<ThemeName>("magazine")
+  // Apple风下未自定义点缀色时使用系统蓝
+  const accent = resolveAccent(theme, rawAccent)
   const [darkMode, setDarkMode] = useState<DarkModeSetting>("auto")
   const dark = isDarkModeEffective(darkMode)
 
   useEffect(() => {
     getSetting().then((s) => {
-      setAccent(normalizeAccent(s.beautifyColor))
+      setRawAccent(normalizeAccent(s.beautifyColor))
+      setTheme(normalizeTheme(s.beautifyTheme))
       setDarkMode(normalizeDarkMode(s.beautifyDarkMode))
     })
   }, [])
@@ -32,6 +36,16 @@ function IndexPopup() {
     setDarkMode(mode)
     getSetting().then((s) => {
       s.beautifyDarkMode = mode
+      saveSetting(s)
+    })
+  }
+
+  /** 切换主题风格：立即持久化，教务页面经 storage watch 实时生效 */
+  const changeTheme = (value: string) => {
+    const next = normalizeTheme(value)
+    setTheme(next)
+    getSetting().then((s) => {
+      s.beautifyTheme = next
       saveSetting(s)
     })
   }
@@ -157,6 +171,24 @@ function IndexPopup() {
       background: ${fillAccent};
       color: #fff;
     }
+    .scu-popup .select {
+      display: block;
+      width: 100%;
+      margin: 6px 0;
+      padding: 8px 10px;
+      font-size: 13px;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      border-radius: 2px;
+      border: 1px solid ${palette.ink};
+      background: ${palette.surface};
+      color: ${palette.ink};
+      font-family: inherit;
+    }
+    .scu-popup .select:focus {
+      outline: none;
+      border-color: ${textAccent};
+    }
     .scu-popup .footer {
       display: flex;
       justify-content: space-between;
@@ -196,6 +228,14 @@ function IndexPopup() {
         </button>
 
         <div className="section-label">设置</div>
+        <select
+          className="select"
+          aria-label="主题风格"
+          value={theme}
+          onChange={(e) => changeTheme(e.target.value)}>
+          <option value="magazine">主题：杂志风</option>
+          <option value="apple">主题：Apple风</option>
+        </select>
         <div className="seg">
           {([["auto", "跟随系统"], ["light", "浅色"], ["dark", "深色"]] as [DarkModeSetting, string][]).map(([mode, label]) => (
             <button

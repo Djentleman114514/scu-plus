@@ -19,6 +19,8 @@ export class SettingItem {
   beautifyColor: string;
   /** 深色模式："auto" 跟随系统 | "light" 浅色 | "dark" 深色 */
   beautifyDarkMode: string;
+  /** 主题风格："magazine" 杂志风 | "apple" 简洁毛玻璃风 */
+  beautifyTheme: string;
   avatarSwitch: boolean;
   avatarSource: string;
   avatarInfo: string;
@@ -36,6 +38,7 @@ export class SettingItem {
     this.beautifySwitch = true;
     this.beautifyColor = "#9e1b32";
     this.beautifyDarkMode = "auto";
+    this.beautifyTheme = "magazine";
     this.avatarSwitch = false;
     this.avatarSource = "qq";
     this.avatarInfo = "";
